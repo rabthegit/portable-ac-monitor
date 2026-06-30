@@ -1,0 +1,41 @@
+interval_minutes: 30
+database_path: data/monitor.db
+log_path: logs/acmonitor.log
+user_agent: "Mozilla/5.0 (compatible; PortableACMonitor/1.0)"
+request_timeout_seconds: 20
+
+email:
+  enabled: false
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  username: "your_email@gmail.com"
+  password: "your_gmail_app_password"
+  from_addr: "your_email@gmail.com"
+  to_addrs:
+    - "your_email@gmail.com"
+
+products:
+  - name: "MeacoCool MC12000CHR Pro Smart Air Conditioner"
+    target_price: 500
+    urls:
+      - retailer: "Meaco"
+        url: "PASTE_PRODUCT_URL_HERE"
+
+  - name: "AEG Comfort 6000 12000 BTU Portable Air Conditioner"
+    target_price: 550
+    urls:
+      - retailer: "AO"
+        url: "PASTE_PRODUCT_URL_HERE"
+
+  - name: "Midea Duo 14000 BTU Inverter Portable Air Conditioner"
+    target_price: 700
+    urls:
+      - retailer: "Amazon UK"
+        url: "PASTE_PRODUCT_URL_HERE"
+
+  - name: "electriQ 12000 BTU Portable Air Conditioner with Heat Pump"
+    target_price: 400
+    urls:
+      - retailer: "Appliances Direct"
+        url: "PASTE_PRODUCT_URL_HERE"
+
