@@ -29,7 +29,7 @@ result = check_product_url(
     product,
     product_url,
     user_agent=self.config.user_agent,
-    timeout_seconds=self.config.request_timeout_seconds,
+    timeout_seconds=self.config.request_timeout_seconds
 )
 
 
