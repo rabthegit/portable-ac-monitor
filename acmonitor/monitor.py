@@ -23,19 +23,13 @@ class Monitor:
                 continue
             for product_url in product.urls:
                 checks += 1
-
-
-result = check_product_url(
-    product,
-    product_url,
-    user_agent=self.config.user_agent,
-    timeout_seconds=self.config.request_timeout_seconds
-)
-
-
-#result = check_product_url(product, product_url, user_agent=self.cfg.user_agent, timeout_seconds=self.cfg.request_timeout_seconds)
-
-        self._handle_result(result, product.target_price)
+                result = check_product_url(
+                    product,
+                    product_url,
+                    user_agent=self.cfg.user_agent,
+                    timeout_seconds=self.cfg.request_timeout_seconds
+                )
+                self._handle_result(result, product.target_price)
         logger.info("Finished monitoring cycle: %s checks", checks)
 
     def _handle_result(self, result: StockResult, target_price: float | None) -> None:
