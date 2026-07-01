@@ -7,6 +7,26 @@ from bs4 import BeautifulSoup
 from ..config import ProductConfig, ProductUrl
 from ..models import StockResult
 
+import re
+
+PRICE_PATTERN = re.compile(
+    r"£\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
+)
+
+def extract_price(text: str) -> float | None:
+    matches = PRICE_PATTERN.findall(text or "")
+
+    prices = []
+
+    for value in matches:
+        try:
+            prices.append(float(value.replace(",", "")))
+        except ValueError:
+            pass
+
+    return min(prices) if prices else None
+
+
 logger = logging.getLogger("acmonitor.retailers.generic")
 
 IN_STOCK_TERMS = ["in stock", "available now", "add to basket", "add to cart", "buy now", "available for delivery"]
