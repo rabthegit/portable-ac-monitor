@@ -1,25 +1,38 @@
 from __future__ import annotations
-import argparse, logging, sys, time
+
+import argparse
+import logging
+import sys
+import time
+
 from .config import load_config
 from .database import Database
 from .emailer import Emailer
 from .logging_setup import setup_logging
 from .monitor import Monitor
 
-def main() -> int:
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Portable AC stock monitor")
-    parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--once", action="store_true")
-    parser.add_argument("--test-email", action="store_true")
+    parser.add_argument("--config", default="config.yaml", help="path to the YAML configuration")
+    parser.add_argument("--once", action="store_true", help="run one monitoring cycle")
+    parser.add_argument("--test-email", action="store_true", help="send a test alert and exit")
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
+    try:
+        config = load_config(args.config)
+    except (OSError, TypeError, ValueError) as exc:
+        parser.error(str(exc))
 
-    cfg = load_config(args.config)
-    setup_logging(cfg.log_path)
+    setup_logging(config.log_path)
     logger = logging.getLogger("acmonitor")
-
-    db = Database(cfg.database_path)
-    db.init()
-    emailer = Emailer(cfg.email)
+    database = Database(config.database_path)
+    database.init()
+    emailer = Emailer(config.email)
 
     if args.test_email:
         emailer.send(
@@ -27,22 +40,25 @@ def main() -> int:
             "This is a test email from your Portable AC Monitor.",
             "<p>This is a test email from your <strong>Portable AC Monitor</strong>.</p>",
         )
-        print("Test email sent.")
         return 0
 
-    monitor = Monitor(cfg, db, emailer)
+    monitor = Monitor(config, database, emailer)
     if args.once:
         monitor.run_once()
         return 0
 
     logger.info("Starting continuous monitor")
-    while True:
-        try:
-            monitor.run_once()
-        except Exception:
-            logger.exception("Monitoring cycle failed")
-        time.sleep(cfg.interval_minutes * 60)
+    try:
+        while True:
+            try:
+                monitor.run_once()
+            except Exception:
+                logger.exception("Monitoring cycle failed")
+            time.sleep(config.interval_minutes * 60)
+    except KeyboardInterrupt:
+        logger.info("Monitor stopped")
+    return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
-

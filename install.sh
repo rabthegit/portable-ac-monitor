@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m venv venv
-./venv/Scripts/python -m pip install --upgrade pip
-./venv/Scripts/pip install -r requirements.txt
+python3 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip
+./.venv/bin/python -m pip install -e .
 
+if [[ ! -f config.yaml ]]; then
+  cp config.example.yaml config.yaml
+fi
 mkdir -p data logs
 
-echo "Installed."
-echo "Run:"
-echo "  ./venv/Scripts/python -m acmonitor --config config.yaml --once"
-
+echo "Installed. Edit config.yaml, then run:"
+echo "  ./.venv/bin/acmonitor --once"

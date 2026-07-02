@@ -1,37 +1,34 @@
 from __future__ import annotations
-import json, logging, re
-from datetime import datetime
+
+import json
+import logging
+import re
+from datetime import datetime, timezone
 from typing import Any
+
 import requests
 from bs4 import BeautifulSoup
+
 from ..config import ProductConfig, ProductUrl
 from ..models import StockResult
 
-import re
+logger = logging.getLogger("acmonitor.retailers.generic")
+IN_STOCK_TERMS = ("in stock", "available now", "add to basket", "add to cart", "buy now", "available for delivery")
+OUT_OF_STOCK_TERMS = ("out of stock", "sold out", "currently unavailable", "temporarily unavailable", "unavailable", "notify me", "email me when available", "coming soon")
+PRICE_PATTERN = re.compile(r"£\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)")
 
-PRICE_PATTERN = re.compile(
-    r"£\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)"
-)
 
 def extract_price(text: str) -> float | None:
-    matches = PRICE_PATTERN.findall(text or "")
-
     prices = []
-
-    for value in matches:
+    for match in PRICE_PATTERN.findall(text or ""):
         try:
-            prices.append(float(value.replace(",", "")))
+            value = float(match.replace(",", ""))
         except ValueError:
-            pass
-
+            continue
+        if 0 < value <= 1_000_000:
+            prices.append(value)
     return min(prices) if prices else None
 
-
-logger = logging.getLogger("acmonitor.retailers.generic")
-
-IN_STOCK_TERMS = ["in stock", "available now", "add to basket", "add to cart", "buy now", "available for delivery"]
-OUT_OF_STOCK_TERMS = ["out of stock", "sold out", "currently unavailable", "temporarily unavailable", "unavailable", "notify me", "email me when available", "coming soon"]
-PRICE_RE = re.compile(r"£\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)")
 
 def _json_ld_objects(soup: BeautifulSoup) -> list[dict[str, Any]]:
     objects = []
@@ -41,120 +38,104 @@ def _json_ld_objects(soup: BeautifulSoup) -> list[dict[str, Any]]:
             continue
         try:
             data = json.loads(text)
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             continue
-        if isinstance(data, dict):
-            objects.append(data)
-            if isinstance(data.get("@graph"), list):
-                objects.extend(x for x in data["@graph"] if isinstance(x, dict))
-        elif isinstance(data, list):
-            objects.extend(x for x in data if isinstance(x, dict))
+        candidates = data if isinstance(data, list) else [data]
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                objects.append(candidate)
+                graph = candidate.get("@graph")
+                if isinstance(graph, list):
+                    objects.extend(item for item in graph if isinstance(item, dict))
     return objects
 
+
 def _find_product_jsonld(soup: BeautifulSoup) -> dict[str, Any] | None:
-    for obj in _json_ld_objects(soup):
-        typ = obj.get("@type")
-        if typ == "Product" or (isinstance(typ, list) and "Product" in typ):
-            return obj
+    for item in _json_ld_objects(soup):
+        item_type = item.get("@type")
+        if item_type == "Product" or (isinstance(item_type, list) and "Product" in item_type):
+            return item
     return None
 
-def _availability_from_jsonld(product: dict[str, Any]) -> tuple[bool | None, str]:
+
+def _offers(product: dict[str, Any]) -> list[dict[str, Any]]:
     offers = product.get("offers")
+    if isinstance(offers, dict):
+        return [offers]
     if isinstance(offers, list):
-        offers = offers[0] if offers else None
-    if not isinstance(offers, dict):
-        return None, ""
-    availability = str(offers.get("availability", "")).lower()
-    if "instock" in availability:
-        return True, f"json-ld availability={availability}"
-    if "outofstock" in availability or "soldout" in availability or "preorder" in availability:
-        return False, f"json-ld availability={availability}"
-    return None, f"json-ld availability={availability}" if availability else ""
+        return [offer for offer in offers if isinstance(offer, dict)]
+    return []
+
+
+def _availability_from_jsonld(product: dict[str, Any]) -> tuple[bool | None, str]:
+    values = [str(offer.get("availability", "")).lower() for offer in _offers(product)]
+    if any("instock" in value for value in values):
+        return True, "JSON-LD reports InStock"
+    if any(token in value for value in values for token in ("outofstock", "soldout", "preorder")):
+        return False, "JSON-LD reports unavailable"
+    return None, ""
+
 
 def _price_from_jsonld(product: dict[str, Any]) -> float | None:
-    offers = product.get("offers")
-    if isinstance(offers, list):
-        offers = offers[0] if offers else None
-    if not isinstance(offers, dict):
-        return None
-    price = offers.get("price") or offers.get("lowPrice")
-    if price is None:
-        return None
-    try:
-        return float(str(price).replace(",", ""))
-    except ValueError:
-        return None
-
-def _price_from_text(text: str) -> float | None:
-    matches = PRICE_RE.findall(text or "")
     prices = []
-    for m in matches:
+    for offer in _offers(product):
+        value = offer.get("price", offer.get("lowPrice"))
         try:
-            value = float(m.replace(",", ""))
-            if 50 <= value <= 5000:
-                prices.append(value)
+            if value is not None:
+                prices.append(float(str(value).replace(",", "")))
         except ValueError:
-            pass
+            continue
     return min(prices) if prices else None
+
 
 def _selected_text(soup: BeautifulSoup, selector: str | None) -> str:
     if not selector:
         return ""
-    node = soup.select_one(selector)
+    try:
+        node = soup.select_one(selector)
+    except Exception as exc:
+        logger.warning("Invalid CSS selector %r: %s", selector, exc)
+        return ""
     return node.get_text(" ", strip=True) if node else ""
 
+
 def check_product_url(product: ProductConfig, product_url: ProductUrl, *, user_agent: str, timeout_seconds: int) -> StockResult:
-    checked_at = datetime.now()
+    checked_at = datetime.now(timezone.utc)
     headers = {"User-Agent": user_agent, "Accept-Language": "en-GB,en;q=0.9"}
     try:
         response = requests.get(product_url.url, headers=headers, timeout=timeout_seconds)
         response.raise_for_status()
-    except Exception as exc:
+    except requests.RequestException as exc:
         return StockResult(product.name, product_url.retailer, product_url.url, False, None, None, "request failed", checked_at, str(exc))
 
     soup = BeautifulSoup(response.text, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else None
-    product_ld = _find_product_jsonld(soup)
-
-    jsonld_availability = None
-    jsonld_evidence = ""
-    jsonld_price = None
-    if product_ld:
-        jsonld_availability, jsonld_evidence = _availability_from_jsonld(product_ld)
-        jsonld_price = _price_from_jsonld(product_ld)
-
+    product_data = _find_product_jsonld(soup)
+    json_availability, json_evidence = _availability_from_jsonld(product_data) if product_data else (None, "")
     selected_availability = _selected_text(soup, product_url.availability_selector)
     selected_price = _selected_text(soup, product_url.price_selector)
-    visible_text = soup.get_text(" ", strip=True)
-    combined = " ".join([selected_availability, visible_text[:50000]]).lower()
+    visible_text = soup.get_text(" ", strip=True)[:50_000]
 
-    if jsonld_availability is not None:
-        available = jsonld_availability
-        evidence = jsonld_evidence
+    if json_availability is not None:
+        available, evidence = json_availability, json_evidence
     elif selected_availability:
-        sl = selected_availability.lower()
-        if any(t in sl for t in OUT_OF_STOCK_TERMS):
-            available = False
-            evidence = f"selector text: {selected_availability[:160]}"
-        elif any(t in sl for t in IN_STOCK_TERMS):
-            available = True
-            evidence = f"selector text: {selected_availability[:160]}"
+        selected_lower = selected_availability.lower()
+        if any(term in selected_lower for term in OUT_OF_STOCK_TERMS):
+            available, evidence = False, f"selector text: {selected_availability[:160]}"
+        elif any(term in selected_lower for term in IN_STOCK_TERMS):
+            available, evidence = True, f"selector text: {selected_availability[:160]}"
         else:
-            available = False
-            evidence = f"selector inconclusive: {selected_availability[:160]}"
+            available, evidence = False, f"selector inconclusive: {selected_availability[:160]}"
     else:
-        out_pos = min([combined.find(t) for t in OUT_OF_STOCK_TERMS if t in combined] or [10**9])
-        in_pos = min([combined.find(t) for t in IN_STOCK_TERMS if t in combined] or [10**9])
-        if out_pos < in_pos:
-            available = False
-            evidence = "matched out-of-stock phrase"
-        elif in_pos < 10**9:
-            available = True
-            evidence = "matched in-stock phrase"
+        page_lower = visible_text.lower()
+        out_position = min((page_lower.find(term) for term in OUT_OF_STOCK_TERMS if term in page_lower), default=10**9)
+        in_position = min((page_lower.find(term) for term in IN_STOCK_TERMS if term in page_lower), default=10**9)
+        if out_position < in_position:
+            available, evidence = False, "matched out-of-stock phrase"
+        elif in_position < 10**9:
+            available, evidence = True, "matched in-stock phrase"
         else:
-            available = False
-            evidence = "no clear stock signal"
+            available, evidence = False, "no clear stock signal"
 
-    price = jsonld_price or _price_from_text(selected_price) or _price_from_text(visible_text[:50000])
+    price = (_price_from_jsonld(product_data) if product_data else None) or extract_price(selected_price) or extract_price(visible_text)
     return StockResult(product.name, product_url.retailer, product_url.url, available, price, title, evidence, checked_at)
-

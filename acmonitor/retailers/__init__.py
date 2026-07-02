@@ -1,0 +1,1 @@
+"""Retailer page checkers."""

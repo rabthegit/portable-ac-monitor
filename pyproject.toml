@@ -1,6 +1,35 @@
-[tool.ruff]
-line-length = 100
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portable-ac-monitor"
+version = "0.1.0"
+description = "Monitor portable air-conditioner product pages for stock and price changes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+  "PyYAML>=6,<7",
+  "requests>=2.31,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+acmonitor = "acmonitor.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["acmonitor*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+testpaths = ["tests"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F"]
