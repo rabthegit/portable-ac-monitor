@@ -1,0 +1,17 @@
+interval_minutes: 30
+database_path: data/monitor.db
+log_path: logs/acmonitor.log
+user_agent: "Mozilla/5.0 (compatible; PortableACMonitor/1.0)"
+request_timeout_seconds: 20
+
+email:
+  enabled: false
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  username: ""
+  password: ""
+  from_addr: ""
+  to_addrs: []
+
+# Add products here. See config.example.yaml for a complete example.
+products: []
