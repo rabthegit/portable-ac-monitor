@@ -18,10 +18,25 @@ On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1` and use `Copy-
 Edit `config.yaml`, then run one check:
 
 ```bash
-acmonitor --once
+python -m acmonitor --config config.yaml --once
 ```
 
-Run continuously with `acmonitor`. On Linux, `./install-systemd.sh` installs the included timer.
+Run continuously with `acmonitor`.
+
+## Raspberry Pi
+
+On Raspberry Pi OS, install Python prerequisites and the application with:
+
+```bash
+./install-pi.sh
+```
+
+After editing `config.yaml`, run a one-off check as shown above. To run the monitor every 30 minutes with systemd:
+
+```bash
+./install-systemd.sh
+sudo systemctl enable --now acmonitor.timer
+```
 
 The checker uses schema.org JSON-LD first, optional CSS selectors second, and common stock phrases last. Retailer markup changes, so verify results and use selectors when necessary. Respect retailer terms and avoid aggressive intervals.
 
